@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -34,32 +33,6 @@ func getNamespace() string {
 	return namespace
 }
 
-func getExceptionLabels() map[string]string {
-	labels := []byte(os.Getenv("DVORNIK_EXCEPTIONS"))
-	var exceptionLabels map[string]string
-	if len(labels) != 0 {
-		err := json.Unmarshal(labels, &exceptionLabels)
-		if err != nil {
-			panic(err.Error())
-		}
-	}
-	return exceptionLabels
-}
-
-func checkPod(pod corev1.Pod, exceptionLabels map[string]string, beforeTime time.Time) bool {
-	if pod.ObjectMeta.CreationTimestamp.Time.Before(beforeTime) && pod.Status.Phase == corev1.PodRunning {
-		shouldSkipped := false
-		for podLabelKey, podLabelValue := range pod.ObjectMeta.Labels {
-			if exceptionLabelValue, ok := exceptionLabels[podLabelKey]; ok {
-				shouldSkipped = exceptionLabelValue == podLabelValue
-				break
-			}
-		}
-		return !shouldSkipped
-	}
-	return false
-}
-
 func getClientset() kubernetes.Clientset {
 	config, err := clientcmd.BuildConfigFromFlags("", os.Getenv("DVORNIK_KUBECONFIG"))
 	if err != nil {
@@ -82,16 +55,17 @@ func getClientset() kubernetes.Clientset {
 }
 
 func getPods(clientset kubernetes.Clientset, namespace string) []corev1.Pod {
-	pods, err := clientset.CoreV1().Pods(namespace).List(context.TODO(), metav1.ListOptions{})
+	opts := metav1.ListOptions{
+		LabelSelector: os.Getenv("DVORNIK_LABEL_SELECTOR"),
+	}
+	pods, err := clientset.CoreV1().Pods(namespace).List(context.TODO(), opts)
 	if err != nil {
 		panic(err.Error())
 	}
-
 	var filteredPods []corev1.Pod
-	exceptionLabels := getExceptionLabels()
 	beforeTime := getBeforeTime()
 	for _, pod := range pods.Items {
-		if checkPod(pod, exceptionLabels, beforeTime) {
+		if pod.ObjectMeta.CreationTimestamp.Time.Before(beforeTime) && pod.Status.Phase == corev1.PodRunning {
 			filteredPods = append(filteredPods, pod)
 		}
 	}
