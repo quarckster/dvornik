@@ -65,7 +65,7 @@ func getPods(clientset kubernetes.Clientset, namespace string) []corev1.Pod {
 	var filteredPods []corev1.Pod
 	beforeTime := getBeforeTime()
 	for _, pod := range pods.Items {
-		if pod.ObjectMeta.CreationTimestamp.Time.Before(beforeTime) && pod.Status.Phase == corev1.PodRunning {
+		if pod.ObjectMeta.CreationTimestamp.Time.Before(beforeTime) && (pod.Status.Phase == corev1.PodRunning || pod.Status.Phase == corev1.PodPending) {
 			filteredPods = append(filteredPods, pod)
 		}
 	}
@@ -77,7 +77,11 @@ func deletePods(pods []corev1.Pod, clientset kubernetes.Clientset, namespace str
 		fmt.Println("The following pods have been deleted:")
 	}
 	for _, pod := range pods {
-		err := clientset.CoreV1().Pods(namespace).Delete(context.TODO(), pod.ObjectMeta.Name, metav1.DeleteOptions{})
+		opts := metav1.DeleteOptions{}
+		if pod.Status.Phase == corev1.PodPending {
+			opts.GracePeriodSeconds = new(int64)
+		}
+		err := clientset.CoreV1().Pods(namespace).Delete(context.TODO(), pod.ObjectMeta.Name, opts)
 		if err != nil {
 			panic(err.Error())
 		}
