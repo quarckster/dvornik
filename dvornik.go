@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -54,6 +55,15 @@ func getClientset() kubernetes.Clientset {
 	return *clientset
 }
 
+func isPodReady(pod corev1.Pod) bool {
+	for _, cond := range pod.Status.Conditions {
+		if cond.Type == corev1.PodReady && strings.Contains(cond.Message, "containers with unready status:") {
+			return cond.Status == "True"
+		}
+	}
+	return true
+}
+
 func getPods(clientset kubernetes.Clientset, namespace string) []corev1.Pod {
 	opts := metav1.ListOptions{
 		LabelSelector: os.Getenv("DVORNIK_LABEL_SELECTOR"),
@@ -66,6 +76,9 @@ func getPods(clientset kubernetes.Clientset, namespace string) []corev1.Pod {
 	beforeTime := getBeforeTime()
 	for _, pod := range pods.Items {
 		if pod.ObjectMeta.CreationTimestamp.Time.Before(beforeTime) && (pod.Status.Phase == corev1.PodRunning || pod.Status.Phase == corev1.PodPending) {
+			filteredPods = append(filteredPods, pod)
+		}
+		if pod.Status.Phase == corev1.PodRunning && !isPodReady(pod) {
 			filteredPods = append(filteredPods, pod)
 		}
 	}
@@ -85,7 +98,6 @@ func deletePods(pods []corev1.Pod, clientset kubernetes.Clientset, namespace str
 		if err != nil {
 			panic(err.Error())
 		}
-		fmt.Println(pod.ObjectMeta.Name)
 	}
 
 }
